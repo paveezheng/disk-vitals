@@ -1,0 +1,10 @@
+node_modules
+dist
+.DS_Store
+*.local
+
+# Rust 构建产物
+src-tauri/target
+
+# Tauri 自动生成的 schema
+src-tauri/gen/schemas

@@ -10,6 +10,7 @@
     "frontendDist": "../dist"
   },
   "app": {
+    "macOSPrivateApi": true,
     "windows": [
       {
         "title": "disk-vitals",
@@ -18,7 +19,13 @@
         "minWidth": 760,
         "minHeight": 520,
         "titleBarStyle": "Overlay",
-        "hiddenTitle": true
+        "hiddenTitle": true,
+        "trafficLightPosition": { "x": 16, "y": 20 },
+        "transparent": true,
+        "windowEffects": {
+          "effects": ["sidebar"],
+          "state": "followsWindowActiveState"
+        }
       }
     ],
     "security": {
@@ -31,7 +38,7 @@
     "category": "Utility",
     "copyright": "",
     "macOS": {
-      "minimumSystemVersion": "11.0"
+      "minimumSystemVersion": "26.0"
     }
   }
 }

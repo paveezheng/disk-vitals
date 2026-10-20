@@ -30,3 +30,8 @@ export function formatBusyTime(minutes: number): string {
   if (minutes < 60) return `${minutes} 分钟`;
   return formatHours(Math.floor(minutes / 60));
 }
+
+/** Unix 毫秒时间戳 → 本地时分秒 */
+export function formatClock(ms: number): string {
+  return new Date(ms).toLocaleTimeString("zh-CN");
+}

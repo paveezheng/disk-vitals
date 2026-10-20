@@ -1,4 +1,4 @@
-/** 与 src-tauri/src/smart/nvme.rs 的 serde 序列化结果保持一致 */
+/** 与 src-tauri 侧 serde 序列化结果保持一致（smart/nvme.rs、monitor.rs） */
 
 export type HealthStatus = "good" | "warning" | "critical";
 
@@ -33,4 +33,16 @@ export interface NvmeDevice {
   unsafeShutdowns: number;
   mediaErrors: number;
   errorLogEntries: number;
+}
+
+/** 一次取数的结果，对应 monitor.rs 的 Snapshot */
+export interface NvmeSnapshot {
+  /** 每次读取递增，用于丢弃乱序到达的旧结果 */
+  seq: number;
+  /** 最近一次成功读取到的设备 */
+  devices: NvmeDevice[];
+  /** 最近一次读取失败的原因；成功时为 null */
+  error: string | null;
+  /** 最近一次成功读取的时间（Unix 毫秒）；从未成功时为 null */
+  updatedAt: number | null;
 }

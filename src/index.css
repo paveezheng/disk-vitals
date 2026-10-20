@@ -6,6 +6,13 @@
   --font-mono: "SF Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
+:root {
+  /* 滚动条、原生控件跟随系统深浅色 */
+  color-scheme: light dark;
+  /* 只让详情区参与 View Transition，侧栏保持实时更新 */
+  view-transition-name: none;
+}
+
 html,
 body,
 #root {
@@ -20,4 +27,61 @@ body {
 /* 数字等宽，避免刷新时数值跳动 */
 .tnum {
   font-variant-numeric: tabular-nums;
+}
+
+/* 警告横幅入场：首次出现时淡入并轻微下移 */
+.banner-enter {
+  transition:
+    opacity 240ms ease-out,
+    translate 240ms ease-out;
+}
+@starting-style {
+  .banner-enter {
+    opacity: 0;
+    translate: 0 -4px;
+  }
+}
+
+/* 温度色阶条：首次出现从 0 伸展，之后数值变化平滑过渡 */
+.meter-fill {
+  transform: scaleX(var(--meter, 0));
+  transform-origin: left;
+  transition: transform 500ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+@starting-style {
+  .meter-fill {
+    transform: scaleX(0);
+  }
+}
+
+/* 切换设备时详情区交叉淡入，只动 opacity / transform */
+.detail-pane {
+  view-transition-name: detail;
+}
+::view-transition-old(detail) {
+  animation: 120ms ease-in both dv-fade-out;
+}
+::view-transition-new(detail) {
+  animation: 220ms cubic-bezier(0.2, 0.8, 0.2, 1) both dv-fade-in;
+}
+@keyframes dv-fade-out {
+  to {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+@keyframes dv-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .banner-enter {
+    transition: opacity 240ms ease-out;
+  }
+  .meter-fill {
+    transition: none;
+  }
 }

@@ -18,11 +18,15 @@ macOS 硬盘健康监测工具。本文件是 AI agent 在本仓库工作时的�
 ```
 src/                      React 前端
   components/             UI 组件
+  lib/api.ts              IPC 封装（命令 + 取数事件订阅）
+  lib/motion.ts           动效工具（View Transition、数值缓动）
   types.ts                与 Rust 侧对齐的类型定义
 src-tauri/
   csrc/smart_shim.{c,h}   IOKit 取数层（C ABI）★ 核心
   src/smart/nvme.rs       C ABI 的 Rust 安全封装
+  src/monitor.rs          定时取数调度 + 事件推送（窗口不可见时暂停）
   src/lib.rs              Tauri commands
+  capabilities/           窗口权限（拖动区、事件监听）
   build.rs                编译 C 垫片 + 链接 IOKit/CoreFoundation
 tools/probe/smart_probe.c 独立探针，取数层的对拍基准
 ```
@@ -100,12 +104,14 @@ IOKit 的 SMART 接口是 COM 风格的 plugin interface（`IOCFPlugInInterface*
 
 ## 对拍基准
 
-开发机（Apple M4 / macOS 27.0）上有两台真实 NVMe 设备，取数层任何改动都应确保这两台仍能正确读出。数值会随时间增长，**看数量级和字段合理性，不要硬编码断言具体数值**：
+开发机（Apple M4 / macOS 26.7.1，WebKit 27.0）上的真实 NVMe 设备，取数层任何改动都应确保能正确读出。数值会随时间增长，**看数量级和字段合理性，不要硬编码断言具体数值**：
 
-| 设备 | class | 特征 |
+| 设备 | class | 特征（2026-10-20 实测） |
 |---|---|---|
-| APPLE SSD AP0256Z | `IOEmbeddedNVMeBlockDevice` | 内置，251 GB，`PERCENTAGE_USED` 0%，通电约 270h |
-| aigo P7000Z 2TB | `IONVMeBlockStorageDevice` | PCIe 外接，2 TB，`PERCENTAGE_USED` 3%，通电约 6237h，写入约 150 TB |
+| APPLE SSD AP0512Z | `IOEmbeddedNVMeBlockDevice` | 内置 `/dev/disk0`，500.28 GB，`PERCENTAGE_USED` 1%，通电约 965h，写入约 33.6 TB，温度约 50°C |
+| aigo P7000Z 2TB | `IONVMeBlockStorageDevice` | PCIe 外接，2 TB；2026-10-20 实测时未连接，需接上后复核 |
+
+取数耗时基线（同机实测，`dv_nvme_enumerate` 单次调用）：冷启动约 10 ms，热调用中位数约 1 ms。**取数本身不是瓶颈**，不要为省这点时间引入缓存或增量更新。
 
 合理性断言建议：温度在 0–100°C、`available_spare` ≤ 100、`percentage_used` ≤ 255、序列号非空。
 
@@ -116,4 +122,6 @@ IOKit 的 SMART 接口是 COM 风格的 plugin interface（`IOCFPlugInInterface*
 - 前端类型定义（`src/types.ts`）必须与 Rust 侧 `serde` 序列化结果保持一致，字段名统一用 `camelCase`（Rust 侧加 `#[serde(rename_all = "camelCase")]`）
 - C 垫片中所有 `IOObjectRelease` / `IODestroyPlugInInterface` / `Release` 必须配对，出错分支也要释放
 - 温度、容量等原始值在 Rust 侧保持原始单位，**格式化只在前端做**
+- 刷新节奏由 `monitor.rs` 调度、通过 `nvme-devices` 事件推送，前端不要自建 `setInterval` 轮询；会调用 IOKit 的命令必须是 async（放到阻塞线程池），不得占用主线程
+- 动画只改 `transform` / `opacity`；无限动画只留给需要立刻注意的状态，并加 `motion-safe:`；大面积模糊用原生 `windowEffects`，不用 CSS `backdrop-filter`
 - 提交信息用中文或英文均可，但需说明「改了什么」而非「做了什么任务」

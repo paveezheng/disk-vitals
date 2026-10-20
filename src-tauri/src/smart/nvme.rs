@@ -186,11 +186,6 @@ pub fn enumerate() -> Result<Vec<NvmeDevice>, String> {
     Ok(raw.into_iter().take(n as usize).map(NvmeDevice::from).collect())
 }
 
-#[tauri::command]
-pub fn list_nvme_devices() -> Result<Vec<NvmeDevice>, String> {
-    enumerate()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

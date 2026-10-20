@@ -52,19 +52,22 @@ IOKit 的 SMART 接口是 COM 风格 plugin interface（`IOCFPlugInInterface**` 
 
 ```
 src/                          React 前端
-  components/                 HealthRing / StatusPill / StatTile / DeviceDetail
+  components/                 HealthRing / StatusPill / StatTile / DeviceDetail / Sidebar
   lib/format.ts               单位换算与展示格式化
-  lib/api.ts                  取数入口（浏览器 DEV 下回退到样本数据）
+  lib/api.ts                  取数入口与事件订阅（浏览器 DEV 下回退到样本数据）
+  lib/motion.ts               动效工具，均尊重系统「减弱动态效果」
   types.ts                    与 Rust serde 输出对齐的类型
 src-tauri/
   csrc/smart_shim.{c,h}       IOKit 取数层，暴露 C ABI     ★ 核心
   src/smart/nvme.rs           C ABI 的 Rust 安全封装 + 测试
+  src/monitor.rs              定时取数调度与事件推送
   src/lib.rs                  Tauri command 注册
+  capabilities/default.json   窗口权限（拖动区、事件监听）
   build.rs                    cc 编译 C 垫片 + 链接 IOKit/CoreFoundation
 tools/probe/smart_probe.c     独立探针，排查问题时最快的验证手段
 ```
 
-数据流：`smart_shim.c`（IOKit）→ `nvme.rs`（`#[repr(C)]` FFI → serde 结构）→ Tauri IPC → React。
+数据流：`smart_shim.c`（IOKit）→ `nvme.rs`（`#[repr(C)]` FFI → serde 结构）→ `monitor.rs`（窗口可见时每 30 秒读取，不可见时暂停）→ Tauri 事件 / IPC → React。所有调用 IOKit 的命令都在阻塞线程池执行，不占用主线程。
 
 原始值在 Rust 侧保持原始单位，单位换算与格式化全部在前端 `lib/format.ts` 完成。
 

@@ -1,113 +1,118 @@
-import { useCallback, useEffect, useState } from "react";
-import type { NvmeDevice } from "./types";
-import { listNvmeDevices } from "./lib/api";
+import { useCallback, useEffect, useRef, useState } from "react";
+import type { NvmeSnapshot } from "./types";
+import {
+  listNvmeDevices,
+  onDevicesUpdated,
+  refreshNvmeDevices,
+  setMonitorActive,
+} from "./lib/api";
+import { useDelayedFlag, withViewTransition } from "./lib/motion";
+import DetailSkeleton from "./components/DetailSkeleton";
 import DeviceDetail from "./components/DeviceDetail";
-import { StatusDot } from "./components/StatusPill";
-import { formatBytes, formatTemp } from "./lib/format";
-
-const REFRESH_INTERVAL_MS = 30_000;
+import Sidebar from "./components/Sidebar";
 
 export default function App() {
-  const [devices, setDevices] = useState<NvmeDevice[]>([]);
-  const [selected, setSelected] = useState(0);
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
+  const [snapshot, setSnapshot] = useState<NvmeSnapshot | null>(null);
+  /** IPC 本身失败；取数失败放在 snapshot.error */
+  const [ipcError, setIpcError] = useState<string | null>(null);
+  const [selectedSerial, setSelectedSerial] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const refreshInFlight = useRef(false);
 
-  const refresh = useCallback(async () => {
-    try {
-      const list = await listNvmeDevices();
-      setDevices(list);
-      setError(null);
-      setUpdatedAt(new Date());
-    } catch (e) {
-      setError(String(e));
-    } finally {
-      setLoading(false);
-    }
+  // 首次加载、后端推送、手动刷新可能乱序到达，只保留序号最新的一份
+  const accept = useCallback((next: NvmeSnapshot) => {
+    setSnapshot((prev) => (prev && prev.seq > next.seq ? prev : next));
+    setIpcError(null);
   }, []);
 
   useEffect(() => {
-    void refresh();
-    const id = setInterval(() => void refresh(), REFRESH_INTERVAL_MS);
-    return () => clearInterval(id);
-  }, [refresh]);
+    let disposed = false;
+    const unlisten = onDevicesUpdated(accept);
+    listNvmeDevices()
+      .then((s) => {
+        if (!disposed) accept(s);
+      })
+      .catch((e) => {
+        if (!disposed) setIpcError(String(e));
+      });
+    return () => {
+      disposed = true;
+      void unlisten.then((off) => off());
+    };
+  }, [accept]);
 
-  const current = devices[selected];
+  // 刷新节奏由后端调度；窗口不可见时让它暂停
+  useEffect(() => {
+    const sync = () => void setMonitorActive(!document.hidden);
+    sync();
+    document.addEventListener("visibilitychange", sync);
+    return () => document.removeEventListener("visibilitychange", sync);
+  }, []);
+
+  const refresh = useCallback(async () => {
+    if (refreshInFlight.current) return;
+    refreshInFlight.current = true;
+    setRefreshing(true);
+    try {
+      accept(await refreshNvmeDevices());
+    } catch (e) {
+      setIpcError(String(e));
+    } finally {
+      refreshInFlight.current = false;
+      setRefreshing(false);
+    }
+  }, [accept]);
+
+  const devices = snapshot?.devices ?? [];
+  // 按硬盘自身序列号选中：设备插拔或顺序变化时不会选到别的盘
+  const current = devices.find((d) => d.serial === selectedSerial) ?? devices[0];
+  const error = ipcError ?? snapshot?.error ?? null;
+  const loading = snapshot === null && ipcError === null;
+  const showSkeleton = useDelayedFlag(loading, 150);
+  const empty = !loading && !error && devices.length === 0;
+
+  const select = useCallback(
+    (serial: string) => {
+      if (serial !== current?.serial) withViewTransition(() => setSelectedSerial(serial));
+    },
+    [current?.serial],
+  );
 
   return (
-    <div className="flex h-full bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100">
-      {/* 侧栏 */}
-      <aside className="flex w-64 shrink-0 flex-col border-r border-slate-200 bg-white/70 dark:border-white/8 dark:bg-white/3">
-        {/* 顶部留出红绿灯按钮的位置 */}
-        <div data-tauri-drag-region className="h-11 shrink-0" />
-        <div className="px-4 pb-2">
-          <h1 className="text-[13px] font-semibold tracking-wide text-slate-400 uppercase dark:text-slate-500">
-            存储设备
-          </h1>
-        </div>
+    <div className="flex h-full text-slate-900 select-none dark:text-slate-100">
+      <Sidebar
+        devices={devices}
+        selectedSerial={current?.serial}
+        onSelect={select}
+        refreshing={refreshing}
+        onRefresh={() => void refresh()}
+        updatedAt={snapshot?.updatedAt ?? null}
+        showEmpty={empty}
+      />
 
-        <nav className="flex-1 space-y-1 overflow-y-auto px-2 pb-2">
-          {devices.map((d, i) => (
-            <button
-              key={`${d.serial}-${d.bsdName}`}
-              onClick={() => setSelected(i)}
-              className={`w-full rounded-lg px-3 py-2.5 text-left transition-colors ${
-                i === selected
-                  ? "bg-sky-500/12 ring-1 ring-sky-500/25 ring-inset"
-                  : "hover:bg-slate-500/8"
-              }`}
-            >
-              <div className="flex items-center gap-2">
-                <StatusDot status={d.status} />
-                <span className="truncate text-sm font-medium">{d.model}</span>
-              </div>
-              <div className="tnum mt-1 pl-4 text-xs text-slate-500 dark:text-slate-400">
-                {formatBytes(d.capacityBytes)} · {formatTemp(d.temperatureC)}
-              </div>
-            </button>
-          ))}
-
-          {!loading && devices.length === 0 && !error && (
-            <p className="px-3 py-2 text-sm text-slate-400">未发现设备</p>
-          )}
-        </nav>
-
-        <footer className="border-t border-slate-200 px-4 py-3 dark:border-white/8">
-          <button
-            onClick={() => void refresh()}
-            className="w-full rounded-lg bg-slate-900/5 px-3 py-1.5 text-sm font-medium transition-colors hover:bg-slate-900/10 dark:bg-white/8 dark:hover:bg-white/12"
-          >
-            刷新
-          </button>
-          {updatedAt && (
-            <p className="tnum mt-2 text-center text-[11px] text-slate-400 dark:text-slate-500">
-              {updatedAt.toLocaleTimeString("zh-CN")} 更新
-            </p>
-          )}
-        </footer>
-      </aside>
-
-      {/* 主区 */}
-      <main className="flex-1 overflow-y-auto">
+      {/* 主区不透明；侧栏透出窗口的原生毛玻璃材质 */}
+      <main className="flex-1 overflow-y-auto bg-slate-50 dark:bg-slate-950">
         <div data-tauri-drag-region className="h-11 shrink-0" />
         <div className="px-8 pb-10">
-          {loading && (
-            <p className="text-sm text-slate-400">正在读取 S.M.A.R.T. 数据…</p>
-          )}
+          {showSkeleton && <DetailSkeleton />}
 
           {error && (
-            <div className="rounded-xl border border-rose-500/25 bg-rose-500/8 p-4">
+            <div className="banner-enter mb-6 rounded-xl border border-rose-500/25 bg-rose-500/8 p-4">
               <div className="text-sm font-semibold text-rose-600 dark:text-rose-400">
                 读取失败
               </div>
-              <p className="mt-1 font-mono text-xs text-rose-600/90 dark:text-rose-300/90">
+              <p className="mt-1 font-mono text-xs text-rose-600/90 select-text dark:text-rose-300/90">
                 {error}
               </p>
+              {current && (
+                <p className="mt-1.5 text-xs text-rose-600/80 dark:text-rose-300/80">
+                  下方显示的是上次成功读取的数据
+                </p>
+              )}
             </div>
           )}
 
-          {!loading && !error && devices.length === 0 && (
+          {empty && (
             <div className="rounded-xl border border-slate-200 bg-white/60 p-6 dark:border-white/8 dark:bg-white/4">
               <h2 className="text-base font-semibold">未发现可读取的 NVMe 设备</h2>
               <p className="mt-1.5 text-sm text-slate-500 dark:text-slate-400">
@@ -117,7 +122,11 @@ export default function App() {
             </div>
           )}
 
-          {current && <DeviceDetail d={current} />}
+          {current && (
+            <div className="detail-pane">
+              <DeviceDetail d={current} />
+            </div>
+          )}
         </div>
       </main>
     </div>

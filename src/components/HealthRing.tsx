@@ -1,4 +1,5 @@
 import type { HealthStatus } from "../types";
+import { useCountUp } from "../lib/motion";
 
 const STROKE: Record<HealthStatus, string> = {
   good: "stroke-emerald-500",
@@ -17,7 +18,9 @@ export default function HealthRing({ percent, status, size = 132 }: Props) {
   const r = (size - stroke) / 2;
   const circumference = 2 * Math.PI * r;
   const clamped = Math.max(0, Math.min(100, percent));
-  const offset = circumference * (1 - clamped / 100);
+  // 入场时从 0 扫到目标值；切换设备时从上一个值接着过渡，圆环与数字同步
+  const shown = useCountUp(clamped);
+  const offset = circumference * (1 - shown / 100);
 
   return (
     <div className="relative shrink-0" style={{ width: size, height: size }}>
@@ -37,12 +40,14 @@ export default function HealthRing({ percent, status, size = 132 }: Props) {
           strokeLinecap="round"
           strokeDasharray={circumference}
           strokeDashoffset={offset}
-          className={`fill-none transition-[stroke-dashoffset] duration-700 ease-out ${STROKE[status]}`}
+          // 0% 时圆头线帽会残留一个点，直接隐藏
+          opacity={shown < 0.5 ? 0 : 1}
+          className={`fill-none transition-colors duration-500 ${STROKE[status]}`}
         />
       </svg>
       <div className="absolute inset-0 flex flex-col items-center justify-center">
         <span className="tnum text-3xl font-semibold text-slate-900 dark:text-white">
-          {clamped}
+          {Math.round(shown)}
           <span className="text-lg text-slate-400 dark:text-slate-500">%</span>
         </span>
         <span className="mt-0.5 text-[11px] tracking-wide text-slate-500 dark:text-slate-400">

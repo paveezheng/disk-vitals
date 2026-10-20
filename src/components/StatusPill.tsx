@@ -21,8 +21,11 @@ const DOT: Record<HealthStatus, string> = {
 export function StatusDot({ status }: { status: HealthStatus }) {
   return (
     <span className="relative flex h-2 w-2 shrink-0">
-      {status !== "good" && (
-        <span className={`absolute inline-flex h-full w-full animate-ping rounded-full opacity-60 ${DOT[status]}`} />
+      {/* 只有危险状态持续脉冲；注意状态靠颜色区分，避免无限动画常驻 */}
+      {status === "critical" && (
+        <span
+          className={`absolute inline-flex h-full w-full rounded-full opacity-60 motion-safe:animate-ping ${DOT[status]}`}
+        />
       )}
       <span className={`relative inline-flex h-2 w-2 rounded-full ${DOT[status]}`} />
     </span>
